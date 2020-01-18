@@ -102,3 +102,10 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Mac crap
+.DS_Store
+
+.idea/
+
+*.png
