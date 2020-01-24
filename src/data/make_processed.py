@@ -3,7 +3,7 @@ import pandas as pd
 
 def label_haemorrhage(row):
     labels = []
-    if row['epidural'] == '1':
+    if row['epidural'] == 1:
         labels.append('epidural')
     if row['intraparenchymal'] == 1:
         labels.append('intraparenchymal')

@@ -21,6 +21,9 @@ np.random.seed(seed)
 raw_data = pd.read_csv('data/processed/train_labels.csv', index_col=None, dtype=str)
 raw_data['ImageNo'].apply(append_png)
 
+labels = set()
+
+
 train_data, test_data = train_test_split(raw_data, train_size=0.7, shuffle=True)
 
 image_train_gen = ImageDataGenerator(vertical_flip=True, validation_split=0.25, rescale=1.0/255.0)
