@@ -11,18 +11,46 @@ from keras.layers.convolutional import MaxPooling2D
 from keras.utils import np_utils
 
 
-def append_png(image):
-    return image + '.png'
-
-
 seed = 7
 np.random.seed(seed)
 
 raw_data = pd.read_csv('data/processed/train_labels.csv', index_col=None, dtype=str)
-raw_data['ImageNo'].apply(append_png)
+raw_data.fillna('', inplace=True)
 
-labels = set()
+def append_png(image):
+    return image + '.png'
 
+
+def create_encoder_mapping(data):
+    labels = set()
+    for i in range(len(data)):
+        labels.update(data['Tags'][i].split(' '))
+
+    labels = list(labels)
+    labels.sort()
+
+    labels_dict = {labels[i]:i for i in range(len(labels))}
+    inv_map = {v:k for k, v in labels_dict.items()}
+    return labels_dict, inv_map
+
+
+def encode(tags, mapping):
+    encoding = np.zeros(len(mapping), dtype='uint8')
+    tags_list = tags.split(' ')
+    for tag in tags_list:
+        encoding[mapping[tag]] = 1
+    return encoding.tolist()
+
+
+def encode_data(data):
+    labels_dict, inv_map = create_encoder_mapping(data)
+    data['EncodedTag'] = data.apply(lambda row: encode(row['Tags'], labels_dict), axis=1)
+    data['ImageNo'] = data['ImageNo'].apply(append_png)
+    return labels_dict, inv_map
+
+
+a, b = encode_data(raw_data)
+print(raw_data.head(15))
 
 train_data, test_data = train_test_split(raw_data, train_size=0.7, shuffle=True)
 
@@ -32,7 +60,7 @@ train_generator = image_train_gen.flow_from_dataframe(
     dataframe=train_data,
     directory='data/raw/train_images/',
     x_col='ImageNo',
-    y_col=['epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural'],
+    y_col='EncodedTag',
     subset='training',
     batch_size=421,
     seed=seed,
@@ -46,7 +74,7 @@ valid_generator = image_train_gen.flow_from_dataframe(
     dataframe=train_data,
     directory='data/raw/train_images/',
     x_col='ImageNo',
-    y_col=['epidural', 'intraparenchymal', 'intraventricular', 'subarachnoid', 'subdural'],
+    y_col='EncodedTag',
     subset='validation',
     batch_size=421,
     seed=seed,
@@ -69,7 +97,7 @@ def create_model():
     model.add(Flatten())
     model.add(Dense(512))
     model.add(Dropout(0.5))
-    model.add(Dense(5, activation='softmax'))
+    model.add(Dense(2, activation='softmax'))
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
@@ -85,7 +113,8 @@ model.fit_generator(
     validation_data=valid_generator,
     validation_steps=STEP_SIZE_VALID,
     epochs=10,
-    use_multiprocessing=True)
+    use_multiprocessing=True,
+    verbose=2)
 
 # serialize model to Json
 model_json = model.to_json()
