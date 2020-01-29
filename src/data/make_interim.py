@@ -30,7 +30,7 @@ def process_labels(d_type):
             bad_rows.append(i)
 
     df.drop(index=bad_rows, inplace=True)
-    df.to_csv(r'data/processed/{}_labels.csv'.format(d_type.name), index=None, header=True)
+    df.to_csv(r'data/interim/{}_labels.csv'.format(d_type.name), index=None, header=True)
 
 
 process_labels(DataType.train)
