@@ -130,6 +130,6 @@ def load_data():
 
 	print("Data shapes: {0}, {1}".format(image.shape, label.shape))
 
-	x_train, y_train, x_test, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
+	x_train, x_test, y_train, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
 	return x_train, y_train, x_test, y_test
 
