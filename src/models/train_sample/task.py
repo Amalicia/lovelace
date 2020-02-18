@@ -9,6 +9,12 @@ import numpy as np
 
 from matplotlib import pyplot
 from contextlib import redirect_stdout
+from google.cloud import storage
+from google.oauth2 import service_account
+
+import time
+import os
+import h5py
 
 NUM_EPOCHS = 1
 BATCH_SIZE = 50
@@ -30,20 +36,48 @@ def summarize(history):
 	pyplot.close()
 
 
+def upload_file(bucket_name, source_file_name, destination_blob_name):
+	storage_client = storage.Client()
+	bucket = storage_client.bucket(bucket_name)
+	blob = bucket.blob(destination_blob_name)
+
+	blob.upload_from_filename(source_file_name)
+	print('File uploaded')
+
+
+def remove_encoding(inv_map, prediction):
+	rounded = prediction.round()
+	tags = [inv_map[i] for i in range(len(rounded)) if rounded[i] == 1.0]
+	return tags
+
+
 def details(keras_model, x_test, y_test, loss, accuracy, fbeta):
 	with open("model_info.txt", "w") as f:
 		with redirect_stdout(f):
 			keras_model.summary()
 
+	inv_map = {v: k for k, v in util.TAG_MAPPING.items()}
+
 	y_pred = keras_model.predict(x_test)
+	y_pred = list(map(lambda x: remove_encoding(inv_map, x), y_pred))
 
-	confusion_matrix = tf.math.confusion_matrix(labels=y_test, predictions=y_pred).numpy()
-	confusion_matrix_norm = np.around(confusion_matrix.asype('float') / confusion_matrix.sum(axis=1)[:, np.newaxis],
-	                                  decimals=2)
+	y_test = list(map(lambda x: remove_encoding(inv_map, x), y_test))
 
-	confusion_matrix_df = pd.DataFrame(confusion_matrix_norm, index=util.TAG_MAPPING.keys(),
-	                                   columns=util.TAG_MAPPING.keys())
-	print(confusion_matrix_df)
+	f = open("model_info.txt", "a")
+	f.write('Loss: %.3f' % loss)
+	f.write('Accuracy: %.3f' % accuracy)
+	f.write('F2 Score: %.3f' % fbeta)
+
+	for i in range(len(list(y_pred))):
+		f.write('Actual: {0}.   Expected: {1}\n'.format(y_test[i], y_pred[i]))
+
+	f.close()
+	upload_file('lovelace', "model_info.txt", "models/test/model_info.txt")
+
+
+def save_and_upload(keras_model):
+	keras_model.save('model.h5')
+	upload_file('lovelace', 'model.h5', 'model.h5')
 
 
 def train_and_evaluate():
@@ -78,6 +112,7 @@ def train_and_evaluate():
 		lambda epoch: LEARNING_RATE + 0.02 * (0.5 ** (1 + epoch))
 	)
 
+	train_start = time.time()
 	history = keras_model.fit(train_data,
 	                          steps_per_epoch=int(train_samples / BATCH_SIZE),
 	                          epochs=NUM_EPOCHS,
@@ -86,12 +121,17 @@ def train_and_evaluate():
 	                          validation_data=validation_data,
 	                          validation_steps=1,
 	                          callbacks=[learning_rate_decay])
+	print("Training took: {0} seconds".format(time.time()-start_time))
 
 	loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
-	print('>>> loss=%.3f, accuracy=%.3f' % (loss, accuracy))
+	print('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
 	# summarize(history)
 	details(keras_model, x_test, y_test, loss, accuracy, fbeta)
+	save_and_upload(keras_model)
 
 
 if __name__ == '__main__':
+	os.environ['GOOGLE_APPLICATION_CREDENTIALS']='../../../bry16607715-f906f68756ff.json'
+	start_time = time.time()
 	train_and_evaluate()
+	print("Execution took: {0} seconds".format(time.time() - start_time))
