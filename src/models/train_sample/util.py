@@ -11,14 +11,16 @@ import urllib
 import urllib.request
 import requests
 
+import upload_file
+
 DATA_DIR = os.path.join(tempfile.gettempdir(), 'haemorrhage_data')
 
-DATA_URL = "https://storage.googleapis.com/lovelace/subset"
+DATA_URL = "https://storage.googleapis.com/lovelace/{0}"
 CSV_FILE = "train_labels.csv"
 IMAGE_LOCATION = "images/"
 NPZ_FILE = "full_data.npz"
 
-NPZ_URL = 'https://storage.googleapis.com/lovelace/subset/full_data.npz'
+NPZ_URL = 'https://storage.googleapis.com/lovelace/{0}/full_data.npz'
 
 CSV_URL = '%s/%s' % (DATA_URL, CSV_FILE)
 IMAGES_URL = '%s/%s' % (DATA_URL, IMAGE_LOCATION)
@@ -41,24 +43,24 @@ def _download_file(filename, url):
 	temp.close()
 
 
-def download_csv(data_dir):
+def download_csv(data_dir, arg_data):
 	tf.io.gfile.makedirs(data_dir)
 
 	csv_file_path = os.path.join(data_dir, CSV_FILE)
 	if not tf.io.gfile.exists(csv_file_path):
 		print('File not existing')
-		_download_file(csv_file_path, CSV_URL)
+		_download_file(csv_file_path, CSV_URL.format(arg_data))
 
 	print('Returned path')
 	return csv_file_path
 
 
-def download_img(data_dir, image_name):
+def download_img(data_dir, image_name, arg_data):
 	tf.io.gfile.makedirs(data_dir)
 
 	image_file_path = os.path.join(data_dir, IMAGE_LOCATION)
 
-	FULL_URL = "%s%s.png" % (IMAGES_URL, image_name)
+	FULL_URL = "%s%s.png" % (IMAGES_URL.format(arg_data), image_name)
 	save_loc = '%s/%s.png' % (image_file_path, image_name)
 	if not tf.io.gfile.exists(save_loc):
 		urllib.request.urlretrieve(FULL_URL, save_loc)
@@ -106,11 +108,11 @@ def get_image_arr(base_path):
 	return np.asarray(images, dtype='uint8')
 
 
-def _load_data():
+def _load_data(data_arg):
 	print('Downloading CSV')
-	csv_file_path = download_csv(DATA_DIR)
+	csv_file_path = download_csv(DATA_DIR, data_arg)
 	df = pd.read_csv(csv_file_path)
-	path = df['ImageNo'].apply(lambda x: download_img(DATA_DIR, x))
+	path = df['ImageNo'].apply(lambda x: download_img(DATA_DIR, x, data_arg))
 
 	encode_data(df)
 	image_arr = get_image_arr(path[0])
@@ -118,25 +120,29 @@ def _load_data():
 	labels = np.stack(labels, axis=0)
 
 	np.savez_compressed('full_data.npz', image_arr, labels)
+	upload_file.upload_file('lovelace', 'full_data.npz', data_arg)
 	return image_arr, labels
 
 
-def download_npz(data_dir):
+def download_npz(data_dir, data_arg):
 	path = './full_data.npz'
 
-	urllib.request.urlretrieve('https://storage.googleapis.com/lovelace/subset/full_data.npz', path)
+	urllib.request.urlretrieve('https://storage.googleapis.com/lovelace/{0}/full_data.npz'.format(data_arg), path)
 
 	data = np.load(path)
 	image, label = data['arr_0'], data['arr_1']
 	return image, label
 
 
-def load_data():
-	request = requests.get(NPZ_URL)
+def load_data(data_arg):
+
+	request = requests.get(NPZ_URL.format(data_arg))
 	if request.status_code == 200:
-		image, label = download_npz(DATA_DIR)
+		print('Loading NPZ')
+		image, label = download_npz(DATA_DIR, data_arg)
 	else:
-		image, label = _load_data()
+		print('Loading CSV and images')
+		image, label = _load_data(data_arg)
 
 	print("Data shapes: {0}, {1}".format(image.shape, label.shape))
 

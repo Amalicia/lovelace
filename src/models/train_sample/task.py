@@ -1,24 +1,27 @@
-import os
-
-import util
-import model
-import pandas as pd
-
 import tensorflow as tf
 import numpy as np
-
 from matplotlib import pyplot
 from contextlib import redirect_stdout
-from google.cloud import storage
-from google.oauth2 import service_account
 
 import time
 import os
 import h5py
+import argparse
 
-NUM_EPOCHS = 1
-BATCH_SIZE = 50
-LEARNING_RATE = 0.01
+import util
+import model
+import upload_file
+
+
+def args():
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--model-name', type=str, required=True, help='name for created model')
+	parser.add_argument('--data', choices=['SUBSET', 'ALL'], default='SUBSET', help='which dataset to use. default: SUBSET')
+	parser.add_argument('--epochs', type=int, default=10, help='no of times to go through data. default: 10')
+	parser.add_argument('--batch-size', type=int, default=128, help='number of images in each training step. default: 128')
+	parser.add_argument('--lr', type=float, default=0.01, help='learning rate for gradient descent. default: 128')
+	args = parser.parse_args()
+	return args
 
 
 def summarize(history):
@@ -36,22 +39,14 @@ def summarize(history):
 	pyplot.close()
 
 
-def upload_file(bucket_name, source_file_name, destination_blob_name):
-	storage_client = storage.Client()
-	bucket = storage_client.bucket(bucket_name)
-	blob = bucket.blob(destination_blob_name)
-
-	blob.upload_from_filename(source_file_name)
-	print('File uploaded')
-
-
 def remove_encoding(inv_map, prediction):
 	rounded = prediction.round()
 	tags = [inv_map[i] for i in range(len(rounded)) if rounded[i] == 1.0]
 	return tags
 
 
-def details(keras_model, x_test, y_test, loss, accuracy, fbeta):
+def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
+	print('Writing model details...')
 	with open("model_info.txt", "w") as f:
 		with redirect_stdout(f):
 			keras_model.summary()
@@ -72,66 +67,69 @@ def details(keras_model, x_test, y_test, loss, accuracy, fbeta):
 		f.write('Actual: {0}.   Expected: {1}\n'.format(y_test[i], y_pred[i]))
 
 	f.close()
-	upload_file('lovelace', "model_info.txt", "models/test/model_info.txt")
+	print('Done!')
+	cloud_file = 'models/{0}/{1}_info.txt'.format(args.data.lower(), args.model_name)
+	upload_file.upload_file('lovelace', "model_info.txt", cloud_file)
 
 
-def save_and_upload(keras_model):
+def save_and_upload(args, keras_model):
+	print('Saving model...')
 	keras_model.save('model.h5')
-	upload_file('lovelace', 'model.h5', 'model.h5')
+	cloud_model = 'models/{0}/{1}.h5'.format(args.data.lower(), args.model_name)
+	upload_file.upload_file('lovelace', 'model.h5', cloud_model)
 
 
-def train_and_evaluate():
-	x_train, y_train, x_test, y_test, x_val, y_val = util.load_data()
+def train_and_evaluate(args):
+	x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
+	print('Loaded data')
 
 	train_samples = x_train.shape[0]
-	print(train_samples)
 	input_dimensions = x_train.shape[1:4]
-	print(input_dimensions)
-
-	print(x_train.shape, y_train.shape)
 
 	test_samples = x_test.shape[0]
 	val_samples = x_val.shape[0]
 
-	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=LEARNING_RATE)
+	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
 
 	train_data = model.make_inputs(
 		data=x_train,
 		labels=y_train,
-		epochs=NUM_EPOCHS,
-		batch_size=BATCH_SIZE)
+		epochs=args.epochs,
+		batch_size=args.batch_size)
 
 	validation_data = model.make_inputs(
 		data=x_val,
 		labels=y_val,
-		epochs=NUM_EPOCHS,
+		epochs=args.epochs,
 		batch_size=val_samples
 	)
 
 	learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
-		lambda epoch: LEARNING_RATE + 0.02 * (0.5 ** (1 + epoch))
+		lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
 	)
 
+	print('Beginning training')
 	train_start = time.time()
 	history = keras_model.fit(train_data,
-	                          steps_per_epoch=int(train_samples / BATCH_SIZE),
-	                          epochs=NUM_EPOCHS,
+	                          steps_per_epoch=int(train_samples / args.batch_size),
+	                          epochs=args.epochs,
 	                          verbose=1,
 	                          use_multiprocessing=True,
 	                          validation_data=validation_data,
 	                          validation_steps=1,
 	                          callbacks=[learning_rate_decay])
-	print("Training took: {0} seconds".format(time.time()-start_time))
+	print("Training took: {0} seconds".format(time.time()-train_start))
 
 	loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
 	print('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
 	# summarize(history)
-	details(keras_model, x_test, y_test, loss, accuracy, fbeta)
-	save_and_upload(keras_model)
+	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
+	save_and_upload(args, keras_model)
 
 
 if __name__ == '__main__':
 	os.environ['GOOGLE_APPLICATION_CREDENTIALS']='../../../bry16607715-f906f68756ff.json'
 	start_time = time.time()
-	train_and_evaluate()
+	args = args()
+	train_and_evaluate(args)
 	print("Execution took: {0} seconds".format(time.time() - start_time))
