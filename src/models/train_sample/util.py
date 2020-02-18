@@ -23,6 +23,14 @@ NPZ_URL = 'https://storage.googleapis.com/lovelace/subset/full_data.npz'
 CSV_URL = '%s/%s' % (DATA_URL, CSV_FILE)
 IMAGES_URL = '%s/%s' % (DATA_URL, IMAGE_LOCATION)
 
+TAG_MAPPING = {
+	'none': 0,
+	'epidural': 1,
+	'intraparenchymal': 2,
+	'intraventricular': 3,
+	'subarachnoid': 4,
+	'subdural': 5
+}
 
 def _download_file(filename, url):
 	temp_file, _ = urllib.request.urlretrieve(url)
@@ -38,8 +46,10 @@ def download_csv(data_dir):
 
 	csv_file_path = os.path.join(data_dir, CSV_FILE)
 	if not tf.io.gfile.exists(csv_file_path):
+		print('File not existing')
 		_download_file(csv_file_path, CSV_URL)
 
+	print('Returned path')
 	return csv_file_path
 
 
@@ -69,23 +79,22 @@ def create_encoder_mapping(data):
 
 	labels_dict = {labels[i]: i for i in range(len(labels))}
 	inv_map = {v: k for k, v in labels_dict.items()}
+	print(labels_dict)
 	return labels_dict, inv_map
 
 
-def encode(tags, mapping):
-	encoding = np.zeros(len(mapping), dtype='uint8')
+def encode(tags):
+	encoding = np.zeros(len(TAG_MAPPING), dtype='uint8')
 	tags_list = tags.split(' ')
 	for tag in tags_list:
-		encoding[mapping[tag]] = 1
+		encoding[TAG_MAPPING[tag]] = 1
 	return encoding.tolist()
 
 
 def encode_data(data):
-	data.fillna('', inplace=True)
-	labels_dict, inv_map = create_encoder_mapping(data)
-	data['EncodedTag'] = data.apply(lambda row: encode(row['Tags'], labels_dict), axis=1)
+	data.fillna('none', inplace=True)
+	data['EncodedTag'] = data.apply(lambda row: encode(row['Tags']), axis=1)
 	data['ImageNo'] = data['ImageNo'].apply(append_png)
-	return labels_dict, inv_map
 
 
 def get_image_arr(base_path):
@@ -98,11 +107,12 @@ def get_image_arr(base_path):
 
 
 def _load_data():
+	print('Downloading CSV')
 	csv_file_path = download_csv(DATA_DIR)
 	df = pd.read_csv(csv_file_path)
 	path = df['ImageNo'].apply(lambda x: download_img(DATA_DIR, x))
 
-	mapping, inv_mapping = encode_data(df)
+	encode_data(df)
 	image_arr = get_image_arr(path[0])
 	labels = df['EncodedTag'].values
 	labels = np.stack(labels, axis=0)
@@ -131,5 +141,6 @@ def load_data():
 	print("Data shapes: {0}, {1}".format(image.shape, label.shape))
 
 	x_train, x_test, y_train, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
-	return x_train, y_train, x_test, y_test
+	x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2)
+	return x_train, y_train, x_test, y_test, x_val, y_val
 
