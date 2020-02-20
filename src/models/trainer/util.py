@@ -137,7 +137,8 @@ def _load_data(data_arg):
 	df = pd.read_csv(csv_file_path)
 	log.info('Downloading Images')
 
-	path = df['ImageNo'].swifter.allow_dask_on_strings().apply(lambda x: download_img(DATA_DIR, x, data_arg))
+	# path = df['ImageNo'].swifter.allow_dask_on_strings().apply(lambda x: download_img(DATA_DIR, x, data_arg))
+	path = df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR, data_arg))
 
 	encode_data(df)
 	image_arr = get_image_arr(path[0])
