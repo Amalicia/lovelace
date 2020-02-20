@@ -78,10 +78,17 @@ def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
 
 
 def save_and_upload(args, keras_model):
-	print('Saving model...')
+	print('Saving model as h5...')
 	keras_model.save('model.h5')
 	cloud_model = 'models/{0}/{1}.h5'.format(args.data.lower(), args.model_name)
 	upload_file.upload_file('lovelace', 'model.h5', cloud_model)
+
+	# print('Saving model as TF SavedModel')
+	# export_path = os.path.join(args.job_dir, args.model_name)
+	# tf.keras.models.save_model(keras_model, export_path)
+	# print('Saved model as tf')
+	# # tf_model = 'models/{0}/{1}.tf'.format(args.data.lower(), args.model_name)
+	# # upload_file.upload_file('lovelace', 'model.tf', tf_model)
 
 
 def train_and_evaluate(args):
@@ -135,13 +142,10 @@ def train_and_evaluate(args):
 	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
 	save_and_upload(args, keras_model)
 
-	export_path = os.path.join(args.job_dir, 'keras_export')
-	tf.keras.experimental.export_saved_model(keras_model, export_path)
-	print('Model exported to: {}'.format(export_path))
 
 
 if __name__ == '__main__':
-	# os.environ['GOOGLE_APPLICATION_CREDENTIALS']='../../../bry16607715-f906f68756ff.json'
+	# os.environ['GOOGLE_APPLICATION_CREDENTIALS']='../../bry16607715-f906f68756ff.json'
 	start_time = time.time()
 	args = args()
 	tf.compat.v1.logging.set_verbosity('INFO')

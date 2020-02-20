@@ -60,12 +60,12 @@ def download_csv(data_dir, arg_data):
 
 
 def download_img(data_dir, image_name, arg_data):
-	tf.io.gfile.makedirs(data_dir)
-
 	image_file_path = os.path.join(data_dir, IMAGE_LOCATION)
 
+	tf.io.gfile.makedirs(image_file_path)
+
 	FULL_URL = "%s%s.png" % (IMAGES_URL.format(arg_data), image_name)
-	save_loc = '%s/%s.png' % (image_file_path, image_name)
+	save_loc = '%s%s.png' % (image_file_path, image_name)
 	if not tf.io.gfile.exists(save_loc):
 		urllib.request.urlretrieve(FULL_URL, save_loc)
 	return image_file_path
