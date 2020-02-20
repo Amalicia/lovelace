@@ -5,7 +5,7 @@ from __future__ import print_function
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-
+from multiprocessing import Pool
 from six.moves import urllib
 from sklearn.model_selection import train_test_split
 
@@ -14,6 +14,9 @@ import os
 import urllib
 import urllib.request
 import requests
+import time
+import logging
+import swifter
 
 from . import upload_file
 
@@ -38,6 +41,14 @@ TAG_MAPPING = {
 	'subdural': 5
 }
 
+log = logging.getLogger("lovelace")
+log.setLevel(logging.INFO)
+
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+log.addHandler(console)
+
+
 def _download_file(filename, url):
 	temp_file, _ = urllib.request.urlretrieve(url)
 	temp = open(temp_file)
@@ -52,22 +63,30 @@ def download_csv(data_dir, arg_data):
 
 	csv_file_path = os.path.join(data_dir, CSV_FILE)
 	if not tf.io.gfile.exists(csv_file_path):
-		print('File not existing')
+		log.info('Downloading file...')
 		_download_file(csv_file_path, CSV_URL.format(arg_data))
 
-	print('Returned path')
+	log.info('Returned path')
 	return csv_file_path
 
 
-def download_img(data_dir, image_name, arg_data):
-	tf.io.gfile.makedirs(data_dir)
-
+def download_img(image_name, data_dir, arg_data):
+	retries = 15
 	image_file_path = os.path.join(data_dir, IMAGE_LOCATION)
 
+	tf.io.gfile.makedirs(image_file_path)
+
 	FULL_URL = "%s%s.png" % (IMAGES_URL.format(arg_data), image_name)
-	save_loc = '%s/%s.png' % (image_file_path, image_name)
+	save_loc = '%s%s.png' % (image_file_path, image_name)
 	if not tf.io.gfile.exists(save_loc):
-		urllib.request.urlretrieve(FULL_URL, save_loc)
+		while (retries > 0):
+			try:
+				urllib.request.urlretrieve(FULL_URL, save_loc)
+				break
+			except:
+				log.warn('Retrying {0}'.format(FULL_URL))
+				retries = retries - 1
+				time.sleep(1)
 	return image_file_path
 
 
@@ -113,10 +132,13 @@ def get_image_arr(base_path):
 
 
 def _load_data(data_arg):
-	print('Downloading CSV')
+	log.info('Downloading CSV')
 	csv_file_path = download_csv(DATA_DIR, data_arg)
 	df = pd.read_csv(csv_file_path)
-	path = df['ImageNo'].apply(lambda x: download_img(DATA_DIR, x, data_arg))
+	log.info('Downloading Images')
+
+	# path = df['ImageNo'].swifter.allow_dask_on_strings().apply(lambda x: download_img(DATA_DIR, x, data_arg))
+	path = df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR, data_arg))
 
 	encode_data(df)
 	image_arr = get_image_arr(path[0])
@@ -139,18 +161,16 @@ def download_npz(data_dir, data_arg):
 
 
 def load_data(data_arg):
-
 	request = requests.get(NPZ_URL.format(data_arg))
 	if request.status_code == 200:
-		print('Loading NPZ')
+		log.info('Loading NPZ')
 		image, label = download_npz(DATA_DIR, data_arg)
 	else:
-		print('Loading CSV and images')
+		log.info('Loading CSV and images')
 		image, label = _load_data(data_arg)
 
-	print("Data shapes: {0}, {1}".format(image.shape, label.shape))
+	log.info("Data shapes: {0}, {1}".format(image.shape, label.shape))
 
 	x_train, x_test, y_train, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
 	x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2)
 	return x_train, y_train, x_test, y_test, x_val, y_val
-
