@@ -11,11 +11,18 @@ import time
 import os
 import h5py
 import argparse
+import logging
 
 from . import util
 from . import model
 from . import upload_file
 
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
+
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+log.addHandler(console)
 
 def args():
 	parser = argparse.ArgumentParser()
@@ -51,7 +58,7 @@ def remove_encoding(inv_map, prediction):
 
 
 def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
-	print('Writing model details...')
+	log.info('Writing model details...')
 	with open("model_info.txt", "w") as f:
 		with redirect_stdout(f):
 			keras_model.summary()
@@ -72,13 +79,13 @@ def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
 		f.write('Actual: {0}.   Expected: {1}\n'.format(y_test[i], y_pred[i]))
 
 	f.close()
-	print('Done!')
+	log.info('Done writing details!')
 	cloud_file = 'models/{0}/{1}_info.txt'.format(args.data.lower(), args.model_name)
 	upload_file.upload_file('lovelace', "model_info.txt", cloud_file)
 
 
 def save_and_upload(args, keras_model):
-	print('Saving model as h5...')
+	log.info('Saving model as h5...')
 	keras_model.save('model.h5')
 	cloud_model = 'models/{0}/{1}.h5'.format(args.data.lower(), args.model_name)
 	upload_file.upload_file('lovelace', 'model.h5', cloud_model)
@@ -93,7 +100,7 @@ def save_and_upload(args, keras_model):
 
 def train_and_evaluate(args):
 	x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
-	print('Loaded data')
+	log.info('Loaded data')
 
 	train_samples = x_train.shape[0]
 	input_dimensions = x_train.shape[1:4]
@@ -124,7 +131,7 @@ def train_and_evaluate(args):
 		os.path.join(args.job_dir, 'keras_tensorboard'),
 		histogram_freq=1)
 
-	print('Beginning training')
+	log.info('Beginning training')
 	train_start = time.time()
 	keras_model.fit(train_data,
 	                          steps_per_epoch=int(train_samples / args.batch_size),
@@ -134,10 +141,10 @@ def train_and_evaluate(args):
 	                          validation_data=validation_data,
 	                          validation_steps=1,
 	                          callbacks=[learning_rate_decay, tensorboard_cb])
-	print("Training took: {0} seconds".format(time.time()-train_start))
+	log.info("Training took: {0} seconds".format(time.time()-train_start))
 
 	loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
-	print('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
+	log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
 	# summarize(history)
 	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
 	save_and_upload(args, keras_model)
@@ -146,8 +153,9 @@ def train_and_evaluate(args):
 
 if __name__ == '__main__':
 	# os.environ['GOOGLE_APPLICATION_CREDENTIALS']='../../bry16607715-f906f68756ff.json'
+	log.info('Starting...')
 	start_time = time.time()
 	args = args()
 	tf.compat.v1.logging.set_verbosity('INFO')
 	train_and_evaluate(args)
-	print("Execution took: {0} seconds".format(time.time() - start_time))
+	log.info("Execution took: {0} seconds".format(time.time() - start_time))
