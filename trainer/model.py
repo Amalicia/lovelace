@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+import logging
 
 def make_inputs(data, labels, epochs, batch_size):
 	inputs = (data, labels)
@@ -55,3 +56,31 @@ def create_model(input_dimensions, learning_rate, out_shape=6):
 	opt = tf.keras.optimizers.RMSprop(lr=learning_rate)
 	model.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy', fbeta])
 	return model
+
+# def create_model():
+# 	# def create_model(input_dimensions, learning_rate, out_shape=6):
+# 	mirrored_strategy = tf.distribute.MirroredStrategy()
+# 	print('Number of devices: {}'.format(mirrored_strategy.num_replicas_in_sync))
+# 	with mirrored_strategy.scope():
+# 		model = tf.keras.models.Sequential()
+# 		model.add(tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same',
+# 		                                 input_shape=(224, 224, 1)))
+# 		model.add(
+# 			tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+# 		model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+# 		model.add(
+# 			tf.keras.layers.Conv2D(64, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+# 		model.add(
+# 			tf.keras.layers.Conv2D(64, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+# 		model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+# 		model.add(
+# 			tf.keras.layers.Conv2D(128, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+# 		model.add(
+# 			tf.keras.layers.Conv2D(128, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+# 		model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+# 		model.add(tf.keras.layers.Flatten())
+# 		model.add(tf.keras.layers.Dense(128, activation=tf.nn.relu, kernel_initializer='he_uniform'))
+# 		model.add(tf.keras.layers.Dense(6, activation='sigmoid'))
+# 		# compile model
+# 		opt = tf.keras.optimizers.RMSprop(lr=0.01)
+# 		model.compile(optimizer=opt, loss=tf.keras.losses.BinaryCrossentropy(), metrics=['accuracy', fbeta])

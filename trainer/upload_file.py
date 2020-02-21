@@ -7,6 +7,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
 def upload_file(bucket_name, source_file_name, destination_blob_name):
 	log.info('Uploading file to cloud')
 	storage_client = storage.Client()
