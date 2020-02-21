@@ -3,13 +3,10 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-import numpy as np
-# from matplotlib import pyplot
 from contextlib import redirect_stdout
 
 import time
 import os
-import h5py
 import argparse
 import logging
 
@@ -34,21 +31,6 @@ def args():
 	parser.add_argument('--lr', type=float, default=0.01, help='learning rate for gradient descent. default: 128')
 	arguments, _ = parser.parse_known_args()
 	return arguments
-
-
-# def summarize(history):
-# 	pyplot.subplot(211)
-# 	pyplot.title('Cross Entropy Loss')
-# 	pyplot.plot(history.history['loss'], color='blue', label='train')
-# 	pyplot.plot(history.history['val_loss'], color='orange', label='test')
-# 	# plot accuracy
-# 	pyplot.subplot(212)
-# 	pyplot.title('accuracy')
-# 	pyplot.plot(history.history['accuracy'], color='blue', label='train')
-# 	pyplot.plot(history.history['val_accuracy'], color='orange', label='test')
-# 	# save plot to file
-# 	pyplot.savefig('loss_acc_plot.png')
-# 	pyplot.close()
 
 
 def remove_encoding(inv_map, prediction):
@@ -109,7 +91,7 @@ def train_and_evaluate(args):
 	val_samples = x_val.shape[0]
 
 	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
-
+	# keras_model = model.create_model()
 	train_data = model.make_inputs(
 		data=x_train,
 		labels=y_train,
@@ -145,14 +127,12 @@ def train_and_evaluate(args):
 
 	loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
 	log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
-	# summarize(history)
 	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
 	save_and_upload(args, keras_model)
 
 
-
 if __name__ == '__main__':
-	# os.environ['GOOGLE_APPLICATION_CREDENTIALS']='../../bry16607715-f906f68756ff.json'
+	os.environ['GOOGLE_APPLICATION_CREDENTIALS']='bry16607715-f906f68756ff.json'
 	log.info('Starting...')
 	start_time = time.time()
 	args = args()

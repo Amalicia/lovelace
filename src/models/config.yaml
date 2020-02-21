@@ -1,7 +1,0 @@
-trainingInput:
-  scaleTier: CUSTOM
-  masterType: n1-highmem-8
-#  workerType: n1-highcpu-16
-#  parameterServerType: n1-highmem-8
-#  workerCount: 0
-#  parameterServerCount: 0

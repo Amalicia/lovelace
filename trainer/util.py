@@ -5,8 +5,7 @@ from __future__ import print_function
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from multiprocessing import Pool
-from six.moves import urllib
+import multiprocessing
 from sklearn.model_selection import train_test_split
 
 import tempfile
@@ -16,11 +15,11 @@ import urllib.request
 import requests
 import time
 import logging
-import swifter
+import dask.dataframe as ddf
 
 from . import upload_file
 
-DATA_DIR = os.path.join(tempfile.gettempdir(), 'haemorrhage_data')
+DATA_DIR = os.path.join(tempfile.gettempdir(), 'haemorrhage_data/{0}/')
 
 DATA_URL = "https://storage.googleapis.com/lovelace/{0}"
 CSV_FILE = "train_labels.csv"
@@ -41,12 +40,7 @@ TAG_MAPPING = {
 	'subdural': 5
 }
 
-log = logging.getLogger("lovelace")
-log.setLevel(logging.INFO)
-
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-log.addHandler(console)
+log = logging.getLogger(__name__)
 
 
 def _download_file(filename, url):
@@ -75,16 +69,16 @@ def download_img(image_name, data_dir, arg_data):
 	image_file_path = os.path.join(data_dir, IMAGE_LOCATION)
 
 	tf.io.gfile.makedirs(image_file_path)
-
-	FULL_URL = "%s%s.png" % (IMAGES_URL.format(arg_data), image_name)
+	log.info('Downloading Image: {0}'.format(image_name))
+	full_url = "%s%s.png" % (IMAGES_URL.format(arg_data), image_name)
 	save_loc = '%s%s.png' % (image_file_path, image_name)
 	if not tf.io.gfile.exists(save_loc):
-		while (retries > 0):
+		while retries > 0:
 			try:
-				urllib.request.urlretrieve(FULL_URL, save_loc)
+				urllib.request.urlretrieve(full_url, save_loc)
 				break
 			except:
-				log.warn('Retrying {0}'.format(FULL_URL))
+				log.warning('Retrying {0}'.format(full_url))
 				retries = retries - 1
 				time.sleep(1)
 	return image_file_path
@@ -94,18 +88,18 @@ def append_png(image):
 	return image + '.png'
 
 
-def create_encoder_mapping(data):
-	labels = set()
-	for i in range(len(data)):
-		labels.update(data['Tags'][i].split(' '))
-
-	labels = list(labels)
-	labels.sort()
-
-	labels_dict = {labels[i]: i for i in range(len(labels))}
-	inv_map = {v: k for k, v in labels_dict.items()}
-	print(labels_dict)
-	return labels_dict, inv_map
+# def create_encoder_mapping(data):
+# 	labels = set()
+# 	for i in range(len(data)):
+# 		labels.update(data['Tags'][i].split(' '))
+#
+# 	labels = list(labels)
+# 	labels.sort()
+#
+# 	labels_dict = {labels[i]: i for i in range(len(labels))}
+# 	inv_map = {v: k for k, v in labels_dict.items()}
+# 	print(labels_dict)
+# 	return labels_dict, inv_map
 
 
 def encode(tags):
@@ -131,26 +125,31 @@ def get_image_arr(base_path):
 	return np.asarray(images, dtype='uint8')
 
 
-def _load_data(data_arg):
+def __load_data(data_arg):
 	log.info('Downloading CSV')
-	csv_file_path = download_csv(DATA_DIR, data_arg)
+	csv_file_path = download_csv(DATA_DIR.format(data_arg), data_arg)
 	df = pd.read_csv(csv_file_path)
 	log.info('Downloading Images')
 
-	# path = df['ImageNo'].swifter.allow_dask_on_strings().apply(lambda x: download_img(DATA_DIR, x, data_arg))
-	path = df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR, data_arg))
+	# dask_df = ddf.from_pandas(df, npartitions=multiprocessing.cpu_count() * 2)
+	# path = dask_df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR, data_arg), meta=('path', str)).compute(scheduler='processes')
+	path = df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR.format(data_arg), data_arg))
+	log.info('Done downloading')
 
+	log.info('Encoding labels')
 	encode_data(df)
+	log.info('Getting Image Data')
 	image_arr = get_image_arr(path[0])
 	labels = df['EncodedTag'].values
 	labels = np.stack(labels, axis=0)
 
+	log.info('Saving NPZ...')
 	np.savez_compressed('full_data.npz', image_arr, labels)
 	upload_file.upload_file('lovelace', 'full_data.npz', data_arg)
 	return image_arr, labels
 
 
-def download_npz(data_dir, data_arg):
+def download_npz(data_arg):
 	path = './full_data.npz'
 
 	urllib.request.urlretrieve('https://storage.googleapis.com/lovelace/{0}/full_data.npz'.format(data_arg), path)
@@ -164,13 +163,13 @@ def load_data(data_arg):
 	request = requests.get(NPZ_URL.format(data_arg))
 	if request.status_code == 200:
 		log.info('Loading NPZ')
-		image, label = download_npz(DATA_DIR, data_arg)
+		image, label = download_npz(data_arg)
 	else:
 		log.info('Loading CSV and images')
-		image, label = _load_data(data_arg)
+		image, label = __load_data(data_arg)
 
 	log.info("Data shapes: {0}, {1}".format(image.shape, label.shape))
 
 	x_train, x_test, y_train, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
-	x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2)
+	x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, random_state=42, test_size=0.2)
 	return x_train, y_train, x_test, y_test, x_val, y_val
