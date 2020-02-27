@@ -1,8 +1,12 @@
 trainingInput:
   scaleTier: CUSTOM
-  masterType: complex_model_m
-  workerType: cloud_tpu
-  workerCount: 1
+  masterType: n1-highmem-32
+#  workerType: cloud_tpu
+#  workerCount: 1
+#  workerConfig:
+#    acceleratorConfig:
+#      type: TPU_V2
+#      count: 8
 #  masterConfig:
 #    acceleratorConfig:
 #      count: 4

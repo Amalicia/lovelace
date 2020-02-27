@@ -63,21 +63,21 @@ def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
 	f.close()
 	log.info('Done writing details!')
 	cloud_file = 'models/{0}/{1}_info.txt'.format(args.data.lower(), args.model_name)
-	upload_file.upload_file('lovelace', "model_info.txt", cloud_file)
+	upload_file.upload_file('lovelace-data', "model_info.txt", cloud_file)
 
 
 def save_and_upload(args, keras_model):
 	log.info('Saving model as h5...')
 	keras_model.save('model.h5')
 	cloud_model = 'models/{0}/{1}.h5'.format(args.data.lower(), args.model_name)
-	upload_file.upload_file('lovelace', 'model.h5', cloud_model)
+	upload_file.upload_file('lovelace-data', 'model.h5', cloud_model)
 
 	# print('Saving model as TF SavedModel')
 	# export_path = os.path.join(args.job_dir, args.model_name)
 	# tf.keras.models.save_model(keras_model, export_path)
 	# print('Saved model as tf')
 	# # tf_model = 'models/{0}/{1}.tf'.format(args.data.lower(), args.model_name)
-	# # upload_file.upload_file('lovelace', 'model.tf', tf_model)
+	# # upload_file.upload_file('lovelace-data', 'model.tf', tf_model)
 
 
 def train_and_evaluate(args):
