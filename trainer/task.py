@@ -29,6 +29,7 @@ def args():
 	parser.add_argument('--epochs', type=int, default=10, help='no of times to go through data. default: 10')
 	parser.add_argument('--batch-size', type=int, default=128, help='number of images in each training step. default: 128')
 	parser.add_argument('--lr', type=float, default=0.01, help='learning rate for gradient descent. default: 128')
+	parser.add_argument('--gpu', type=float, default=0, help='number of GPUs to be used. default 0')
 	arguments, _ = parser.parse_known_args()
 	return arguments
 
@@ -81,58 +82,64 @@ def save_and_upload(args, keras_model):
 
 
 def train_and_evaluate(args):
-	x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
-	log.info('Loaded data')
+	with tf.device('/device:GPU:0'):
+		x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
+		log.info('Loaded data')
 
-	train_samples = x_train.shape[0]
-	input_dimensions = x_train.shape[1:4]
+		log.info('GPU Stuff:')
 
-	test_samples = x_test.shape[0]
-	val_samples = x_val.shape[0]
+		train_samples = x_train.shape[0]
+		input_dimensions = x_train.shape[1:4]
 
-	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
-	# keras_model = model.create_model()
-	train_data = model.make_inputs(
-		data=x_train,
-		labels=y_train,
-		epochs=args.epochs,
-		batch_size=args.batch_size)
+		test_samples = x_test.shape[0]
+		val_samples = x_val.shape[0]
 
-	validation_data = model.make_inputs(
-		data=x_val,
-		labels=y_val,
-		epochs=args.epochs,
-		batch_size=val_samples
-	)
+		keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
 
-	learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
-		lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
-	)
+		if args.gpu != 0:
+			keras_model = tf.keras.utils.training_utils.multi_gpu_model(keras_model, gpus=args.gpu)
 
-	tensorboard_cb = tf.keras.callbacks.TensorBoard(
-		os.path.join(args.job_dir, 'keras_tensorboard'),
-		histogram_freq=1)
+		train_data = model.make_inputs(
+			data=x_train,
+			labels=y_train,
+			epochs=args.epochs,
+			batch_size=args.batch_size)
 
-	log.info('Beginning training')
-	train_start = time.time()
-	keras_model.fit(train_data,
-	                          steps_per_epoch=int(train_samples / args.batch_size),
-	                          epochs=args.epochs,
-	                          verbose=1,
-	                          use_multiprocessing=True,
-	                          validation_data=validation_data,
-	                          validation_steps=1,
-	                          callbacks=[learning_rate_decay, tensorboard_cb])
-	log.info("Training took: {0} seconds".format(time.time()-train_start))
+		validation_data = model.make_inputs(
+			data=x_val,
+			labels=y_val,
+			epochs=args.epochs,
+			batch_size=val_samples
+		)
 
-	loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
-	log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
-	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
-	save_and_upload(args, keras_model)
+		learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
+			lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
+		)
+
+		tensorboard_cb = tf.keras.callbacks.TensorBoard(
+			os.path.join(args.job_dir, 'keras_tensorboard'),
+			histogram_freq=1)
+
+		log.info('Beginning training')
+		train_start = time.time()
+		keras_model.fit(train_data,
+		                          steps_per_epoch=int(train_samples / args.batch_size),
+		                          epochs=args.epochs,
+		                          verbose=1,
+		                          use_multiprocessing=True,
+		                          validation_data=validation_data,
+		                          validation_steps=1,
+		                          callbacks=[learning_rate_decay, tensorboard_cb])
+		log.info("Training took: {0} seconds".format(time.time()-train_start))
+
+		loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
+		log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
+		details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
+		save_and_upload(args, keras_model)
 
 
 if __name__ == '__main__':
-	os.environ['GOOGLE_APPLICATION_CREDENTIALS']='bry16607715-f906f68756ff.json'
+	# os.environ['GOOGLE_APPLICATION_CREDENTIALS']='bry16607715-f906f68756ff.json'
 	log.info('Starting...')
 	start_time = time.time()
 	args = args()

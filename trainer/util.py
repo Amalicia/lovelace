@@ -16,9 +16,11 @@ import urllib.request
 import requests
 import time
 import logging
-import dask.dataframe as ddf
 
 from . import upload_file
+import errno
+# from signal import signal, SIGPIPE, SIG_DFL
+# signal(SIGPIPE,SIG_DFL)
 
 DATA_DIR = os.path.join(tempfile.gettempdir(), 'haemorrhage_data/{0}/')
 
@@ -130,10 +132,14 @@ def __load_data(data_arg):
 	log.info('Downloading Images')
 
 	cpu_count = multiprocessing.cpu_count()
+	log.info("CPU Count: {0}".format(cpu_count))
 	pool = multiprocessing.Pool(cpu_count * 2)
 	download_func = partial(download_img, image_file_path=image_file_path, arg_data=data_arg)
-	pool.map(download_func, df['ImageNo'].values)
-
+	try:
+		pool.map(download_func, df['ImageNo'].values)
+	except IOError as e:
+		if e.errno == errno:
+			log.info("***** PIPE ERROR *****")
 
 	log.info('Encoding labels')
 	encode_data(df)
@@ -165,7 +171,7 @@ def download_npz(data_arg):
 
 def load_data(data_arg):
 	request = requests.get(NPZ_URL.format(data_arg))
-	if request.status_code == 201:
+	if request.status_code == 200:
 		log.info('Loading NPZ')
 		image, label = download_npz(data_arg)
 	else:
