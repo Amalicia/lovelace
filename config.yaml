@@ -1,12 +1,17 @@
 trainingInput:
   scaleTier: CUSTOM
-  masterType: complex_model_m
-  workerType: cloud_tpu
-  workerCount: 1
+  masterType: n1-highmem-32
 #  masterConfig:
 #    acceleratorConfig:
-#      count: 4
+#      count: 1
 #      type: NVIDIA_TESLA_K80
+#  workerType: cloud_tpu
+#  workerCount: 1
+#  workerConfig:
+#    acceleratorConfig:
+#      type: TPU_V2
+#      count: 8
+
 #  workerType: n1-highcpu-16
 #  parameterServerType: n1-highmem-8
 #  workerCount: 0

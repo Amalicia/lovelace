@@ -33,28 +33,30 @@ def fbeta(y_pred, y_true, beta=2):
 
 
 def create_model(input_dimensions, learning_rate, out_shape=6):
-	model = tf.keras.models.Sequential()
-	model.add(tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same',
-	                                 input_shape=input_dimensions))
-	model.add(
-		tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
-	model.add(tf.keras.layers.MaxPooling2D((2, 2)))
-	model.add(
-		tf.keras.layers.Conv2D(64, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
-	model.add(
-		tf.keras.layers.Conv2D(64, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
-	model.add(tf.keras.layers.MaxPooling2D((2, 2)))
-	model.add(
-		tf.keras.layers.Conv2D(128, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
-	model.add(
-		tf.keras.layers.Conv2D(128, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
-	model.add(tf.keras.layers.MaxPooling2D((2, 2)))
-	model.add(tf.keras.layers.Flatten())
-	model.add(tf.keras.layers.Dense(128, activation=tf.nn.relu, kernel_initializer='he_uniform'))
-	model.add(tf.keras.layers.Dense(out_shape, activation='sigmoid'))
-	# compile model
-	opt = tf.keras.optimizers.RMSprop(lr=learning_rate)
-	model.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy', fbeta])
+	strategy = tf.distribute.MirroredStrategy()
+	with strategy.scope():
+		model = tf.keras.models.Sequential()
+		model.add(tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same',
+		                                 input_shape=input_dimensions))
+		model.add(
+			tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+		model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+		model.add(
+			tf.keras.layers.Conv2D(64, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+		model.add(
+			tf.keras.layers.Conv2D(64, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+		model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+		model.add(
+			tf.keras.layers.Conv2D(128, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+		model.add(
+			tf.keras.layers.Conv2D(128, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same'))
+		model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+		model.add(tf.keras.layers.Flatten())
+		model.add(tf.keras.layers.Dense(128, activation=tf.nn.relu, kernel_initializer='he_uniform'))
+		model.add(tf.keras.layers.Dense(out_shape, activation='sigmoid'))
+		# compile model
+		opt = tf.keras.optimizers.RMSprop(lr=learning_rate)
+		model.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy', fbeta])
 	return model
 
 # def create_model():

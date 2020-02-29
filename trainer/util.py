@@ -7,6 +7,7 @@ import pandas as pd
 import tensorflow as tf
 import multiprocessing
 from sklearn.model_selection import train_test_split
+from functools import partial
 
 import tempfile
 import os
@@ -15,18 +16,17 @@ import urllib.request
 import requests
 import time
 import logging
-import dask.dataframe as ddf
 
 from . import upload_file
 
 DATA_DIR = os.path.join(tempfile.gettempdir(), 'haemorrhage_data/{0}/')
 
-DATA_URL = "https://storage.googleapis.com/lovelace/{0}"
+DATA_URL = "https://storage.googleapis.com/lovelace-data/{0}"
 CSV_FILE = "train_labels.csv"
 IMAGE_LOCATION = "images/"
 NPZ_FILE = "full_data.npz"
 
-NPZ_URL = 'https://storage.googleapis.com/lovelace/{0}/full_data.npz'
+NPZ_URL = 'https://storage.googleapis.com/lovelace-data/{0}/full_data.npz'
 
 CSV_URL = '%s/%s' % (DATA_URL, CSV_FILE)
 IMAGES_URL = '%s/%s' % (DATA_URL, IMAGE_LOCATION)
@@ -64,11 +64,8 @@ def download_csv(data_dir, arg_data):
 	return csv_file_path
 
 
-def download_img(image_name, data_dir, arg_data):
+def download_img(image_name, image_file_path, arg_data):
 	retries = 15
-	image_file_path = os.path.join(data_dir, IMAGE_LOCATION)
-
-	tf.io.gfile.makedirs(image_file_path)
 	log.info('Downloading Image: {0}'.format(image_name))
 	full_url = "%s%s.png" % (IMAGES_URL.format(arg_data), image_name)
 	save_loc = '%s%s.png' % (image_file_path, image_name)
@@ -81,7 +78,6 @@ def download_img(image_name, data_dir, arg_data):
 				log.warning('Retrying {0}'.format(full_url))
 				retries = retries - 1
 				time.sleep(1)
-	return image_file_path
 
 
 def append_png(image):
@@ -116,43 +112,65 @@ def encode_data(data):
 	data['ImageNo'] = data['ImageNo'].apply(append_png)
 
 
-def get_image_arr(base_path):
-	images = list()
-	for image in os.listdir(base_path):
-		pic = tf.keras.preprocessing.image.load_img(base_path + image, color_mode='grayscale', target_size=(224, 244))
-		pic = tf.keras.preprocessing.image.img_to_array(pic, dtype='uint8')
-		images.append(pic)
-	return np.asarray(images, dtype='uint8')
+def get_image_arr(image, base_path):
+	pic = tf.keras.preprocessing.image.load_img(base_path + image, color_mode='grayscale', target_size=(224, 224))
+	pic = tf.keras.preprocessing.image.img_to_array(pic, dtype='uint8')
+	return pic
 
 
 def __load_data(data_arg):
 	log.info('Downloading CSV')
 	csv_file_path = download_csv(DATA_DIR.format(data_arg), data_arg)
 	df = pd.read_csv(csv_file_path)
-	log.info('Downloading Images')
 
-	# dask_df = ddf.from_pandas(df, npartitions=multiprocessing.cpu_count() * 2)
-	# path = dask_df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR, data_arg), meta=('path', str)).compute(scheduler='processes')
-	path = df['ImageNo'].apply(lambda x: download_img(x, DATA_DIR.format(data_arg), data_arg))
-	log.info('Done downloading')
+	image_file_path = os.path.join(DATA_DIR.format(data_arg), IMAGE_LOCATION)
+	print(image_file_path)
 
+	cpu_count = multiprocessing.cpu_count()
+	log.info("CPU Count: {0}".format(cpu_count))
+	pool = multiprocessing.Pool(cpu_count * 2)
+
+	if data_arg == "subset":
+		tf.io.gfile.makedirs(image_file_path)
+		log.info('Downloading Images')
+		download_func = partial(download_img, image_file_path=image_file_path, arg_data=data_arg)
+		pool.map(download_func, df['ImageNo'].values)
+	else:
+		log.info('Downloading and extracting .tgz')
+		start = time.time()
+		_ = tf.keras.utils.get_file("images",
+		                            origin="https://storage.googleapis.com/lovelace-data/all/images.tgz",
+		                            extract=True)
+		image_file_path = "/root/.keras/datasets/train_images/"
+		print("time take: {0}".format(time.time() - start))
+
+	pool.close()
+	print(image_file_path)
 	log.info('Encoding labels')
 	encode_data(df)
+
+	pool = multiprocessing.Pool(cpu_count * 4)
 	log.info('Getting Image Data')
-	image_arr = get_image_arr(path[0])
+	image_arr_func = partial(get_image_arr, base_path=image_file_path)
+	images = df['ImageNo'].values
+	image_arr = pool.map(image_arr_func, images)
+	image_arr = np.asarray(image_arr, dtype='uint8')
+
 	labels = df['EncodedTag'].values
 	labels = np.stack(labels, axis=0)
 
 	log.info('Saving NPZ...')
 	np.savez_compressed('full_data.npz', image_arr, labels)
-	upload_file.upload_file('lovelace', 'full_data.npz', data_arg)
+	log.info('Uploading to cloud')
+	os.system("gsutil cp full_data.npz gs://lovelace-data/all/")
+	# upload_file.upload_file('lovelace-data', 'full_data.npz', data_arg)
 	return image_arr, labels
 
 
 def download_npz(data_arg):
 	path = './full_data.npz'
 
-	urllib.request.urlretrieve('https://storage.googleapis.com/lovelace/{0}/full_data.npz'.format(data_arg), path)
+	urllib.request.urlretrieve('https://storage.googleapis.com/lovelace-data/{0}/full_data.npz'.format(data_arg), path)
 
 	data = np.load(path)
 	image, label = data['arr_0'], data['arr_1']
@@ -161,7 +179,7 @@ def download_npz(data_arg):
 
 def load_data(data_arg):
 	request = requests.get(NPZ_URL.format(data_arg))
-	if request.status_code == 200:
+	if request.status_code == 201:
 		log.info('Loading NPZ')
 		image, label = download_npz(data_arg)
 	else:
