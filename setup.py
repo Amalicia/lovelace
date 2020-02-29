@@ -1,7 +1,7 @@
 from setuptools import find_packages
 from setuptools import setup
 
-REQUIRED_PACKAGES = ['dask[dataframe]>=2.6.0', 'Pillow>=7.0.0']
+REQUIRED_PACKAGES = ['Pillow>=7.0.0']
 
 setup(
     name='trainer',
