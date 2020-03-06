@@ -21,13 +21,16 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 log.addHandler(console)
 
+
 def args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--job-dir', type=str, required=True)
 	parser.add_argument('--model-name', type=str, required=True, help='name for created model')
-	parser.add_argument('--data', choices=['SUBSET', 'ALL'], default='SUBSET', help='which dataset to use. default: SUBSET')
+	parser.add_argument('--data', choices=['SUBSET', 'ALL'], default='SUBSET',
+	                    help='which dataset to use. default: SUBSET')
 	parser.add_argument('--epochs', type=int, default=10, help='no of times to go through data. default: 10')
-	parser.add_argument('--batch-size', type=int, default=128, help='number of images in each training step. default: 128')
+	parser.add_argument('--batch-size', type=int, default=128,
+	                    help='number of images in each training step. default: 128')
 	parser.add_argument('--lr', type=float, default=0.01, help='learning rate for gradient descent. default: 128')
 	parser.add_argument('--gpu', type=float, default=0, help='number of GPUs to be used. default 0')
 	arguments, _ = parser.parse_known_args()
@@ -40,7 +43,7 @@ def remove_encoding(inv_map, prediction):
 	return tags
 
 
-def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
+def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta, batch_size):
 	log.info('Writing model details...')
 	with open("model_info.txt", "w") as f:
 		with redirect_stdout(f):
@@ -48,15 +51,15 @@ def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta):
 
 	inv_map = {v: k for k, v in util.TAG_MAPPING.items()}
 
-	y_pred = keras_model.predict(x_test)
+	y_pred = keras_model.predict(x_test, batch_size=batch_size)
 	y_pred = list(map(lambda x: remove_encoding(inv_map, x), y_pred))
 
 	y_test = list(map(lambda x: remove_encoding(inv_map, x), y_test))
 
 	f = open("model_info.txt", "a")
-	f.write('Loss: %.3f' % loss)
-	f.write('Accuracy: %.3f' % accuracy)
-	f.write('F2 Score: %.3f' % fbeta)
+	f.write('Loss: %.3f\n' % loss)
+	f.write('Accuracy: %.3f\n' % accuracy)
+	f.write('F2 Score: %.3f\n\n' % fbeta)
 
 	for i in range(len(list(y_pred))):
 		f.write('Actual: {0}.   Expected: {1}\n'.format(y_test[i], y_pred[i]))
@@ -73,69 +76,75 @@ def save_and_upload(args, keras_model):
 	cloud_model = 'models/{0}/{1}.h5'.format(args.data.lower(), args.model_name)
 	upload_file.upload_file('lovelace-data', 'model.h5', cloud_model)
 
-	# print('Saving model as TF SavedModel')
-	# export_path = os.path.join(args.job_dir, args.model_name)
-	# tf.keras.models.save_model(keras_model, export_path)
-	# print('Saved model as tf')
-	# # tf_model = 'models/{0}/{1}.tf'.format(args.data.lower(), args.model_name)
-	# # upload_file.upload_file('lovelace-data', 'model.tf', tf_model)
+
+# print('Saving model as TF SavedModel')
+# export_path = os.path.join(args.job_dir, args.model_name)
+# tf.keras.models.save_model(keras_model, export_path)
+# print('Saved model as tf')
+# # tf_model = 'models/{0}/{1}.tf'.format(args.data.lower(), args.model_name)
+# # upload_file.upload_file('lovelace-data', 'model.tf', tf_model)
 
 
 def train_and_evaluate(args):
-	with tf.device('/device:GPU:0'):
-		x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
-		log.info('Loaded data')
+	x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
+	log.info('Loaded data')
 
-		log.info('GPU Stuff:')
+	# log.info('GPU Stuff:')
 
-		train_samples = x_train.shape[0]
-		input_dimensions = x_train.shape[1:4]
+	train_samples = x_train.shape[0]
+	input_dimensions = x_train.shape[1:4]
 
-		test_samples = x_test.shape[0]
-		val_samples = x_val.shape[0]
+	test_samples = x_test.shape[0]
+	val_samples = x_val.shape[0]
 
-		keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
+	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
 
-		if args.gpu != 0:
-			keras_model = tf.keras.utils.training_utils.multi_gpu_model(keras_model, gpus=args.gpu)
+	# train_data = model.make_inputs(
+	# 	data=x_train,
+	# 	labels=y_train,
+	# 	epochs=args.epochs,
+	# 	batch_size=args.batch_size)
+	#
+	# validation_data = model.make_inputs(
+	# 	data=x_val,
+	# 	labels=y_val,
+	# 	epochs=args.epochs,
+	# 	batch_size=val_samples
+	# )
 
-		train_data = model.make_inputs(
-			data=x_train,
-			labels=y_train,
-			epochs=args.epochs,
-			batch_size=args.batch_size)
+	image_generator = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1.0 / 255.0)
 
-		validation_data = model.make_inputs(
-			data=x_val,
-			labels=y_val,
-			epochs=args.epochs,
-			batch_size=val_samples
-		)
+	train_data = model.make_inputs(x_train, y_train, batch_size=args.batch_size, generator=image_generator)
+	validation_data = model.make_inputs(x_val, y_val, batch_size=val_samples, generator=image_generator)
 
-		learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
-			lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
-		)
+	learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
+		lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
+	)
 
-		tensorboard_cb = tf.keras.callbacks.TensorBoard(
-			os.path.join(args.job_dir, 'keras_tensorboard'),
-			histogram_freq=1)
+	tensorboard_cb = tf.keras.callbacks.TensorBoard(
+		os.path.join(args.job_dir, 'keras_tensorboard'),
+		histogram_freq=1)
 
-		log.info('Beginning training')
-		train_start = time.time()
-		keras_model.fit(train_data,
-		                          steps_per_epoch=int(train_samples / args.batch_size),
-		                          epochs=args.epochs,
-		                          verbose=1,
-		                          use_multiprocessing=True,
-		                          validation_data=validation_data,
-		                          validation_steps=1,
-		                          callbacks=[learning_rate_decay, tensorboard_cb])
-		log.info("Training took: {0} seconds".format(time.time()-train_start))
+	log.info('Beginning training')
+	train_start = time.time()
+	keras_model.fit(train_data,
+	                epochs=args.epochs,
+	                verbose=1,
+	                validation_data=validation_data,
+	                validation_steps=1,
+	                callbacks=[learning_rate_decay, tensorboard_cb])
+	log.info("Training took: {0} seconds".format(time.time() - train_start))
 
-		loss, accuracy, fbeta = keras_model.evaluate(x=x_test, y=y_test, verbose=1)
-		log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
-		details(args, keras_model, x_test, y_test, loss, accuracy, fbeta)
-		save_and_upload(args, keras_model)
+	for i in range(1, 160):
+		if len(x_test) % i == 0:
+			div = i
+	test_batch = div
+
+	log.info("Evaluating model")
+	loss, accuracy, fbeta = keras_model.evaluate(x_test, y_test, batch_size=test_batch, verbose=1)
+	log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
+	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta, test_batch)
+	save_and_upload(args, keras_model)
 
 
 if __name__ == '__main__':

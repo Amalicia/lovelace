@@ -179,7 +179,7 @@ def download_npz(data_arg):
 
 def load_data(data_arg):
 	request = requests.get(NPZ_URL.format(data_arg))
-	if request.status_code == 201:
+	if request.status_code == 200:
 		log.info('Loading NPZ')
 		image, label = download_npz(data_arg)
 	else:

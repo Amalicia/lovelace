@@ -6,12 +6,14 @@ import tensorflow as tf
 
 import logging
 
-def make_inputs(data, labels, epochs, batch_size):
-	inputs = (data, labels)
-	dataset = tf.data.Dataset.from_tensor_slices(inputs)
+log = logging.getLogger(__name__)
 
-	dataset = dataset.repeat(epochs)
-	dataset = dataset.batch(batch_size)
+def make_inputs(data, labels, batch_size, generator):
+	dataset = tf.data.Dataset.from_generator(
+		lambda: generator.flow(data, labels, batch_size=batch_size),
+		output_types=(tf.float32, tf.uint8),
+		output_shapes=([None, 224, 224, 1], [None, 6])
+	)
 	return dataset
 
 
@@ -34,6 +36,7 @@ def fbeta(y_pred, y_true, beta=2):
 
 def create_model(input_dimensions, learning_rate, out_shape=6):
 	strategy = tf.distribute.MirroredStrategy()
+	log.info('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 	with strategy.scope():
 		model = tf.keras.models.Sequential()
 		model.add(tf.keras.layers.Conv2D(32, (3, 3), activation=tf.nn.relu, kernel_initializer='he_uniform', padding='same',
