@@ -149,7 +149,7 @@ def __load_data(data_arg):
 	log.info('Encoding labels')
 	encode_data(df)
 
-	pool = multiprocessing.Pool(cpu_count * 4)
+	pool = multiprocessing.Pool(cpu_count * 2)
 	log.info('Getting Image Data')
 	image_arr_func = partial(get_image_arr, base_path=image_file_path)
 	images = df['ImageNo'].values
@@ -179,7 +179,7 @@ def download_npz(data_arg):
 
 def load_data(data_arg):
 	request = requests.get(NPZ_URL.format(data_arg))
-	if request.status_code == 201:
+	if request.status_code == 200:
 		log.info('Loading NPZ')
 		image, label = download_npz(data_arg)
 	else:
@@ -189,5 +189,6 @@ def load_data(data_arg):
 	log.info("Data shapes: {0}, {1}".format(image.shape, label.shape))
 
 	x_train, x_test, y_train, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
+	del image, label
 	x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, random_state=42, test_size=0.2)
 	return x_train, y_train, x_test, y_test, x_val, y_val
