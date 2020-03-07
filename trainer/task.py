@@ -4,11 +4,16 @@ from __future__ import print_function
 
 import tensorflow as tf
 from contextlib import redirect_stdout
+from sklearn.metrics import classification_report
+from sklearn.metrics import multilabel_confusion_matrix
+from functools import partial
 
 import time
 import os
 import argparse
 import logging
+import multiprocessing
+import numpy as np
 
 from . import util
 from . import model
@@ -32,12 +37,11 @@ def args():
 	parser.add_argument('--batch-size', type=int, default=128,
 	                    help='number of images in each training step. default: 128')
 	parser.add_argument('--lr', type=float, default=0.01, help='learning rate for gradient descent. default: 128')
-	parser.add_argument('--gpu', type=float, default=0, help='number of GPUs to be used. default 0')
 	arguments, _ = parser.parse_known_args()
 	return arguments
 
 
-def remove_encoding(inv_map, prediction):
+def remove_encoding(prediction, inv_map):
 	rounded = prediction.round()
 	tags = [inv_map[i] for i in range(len(rounded)) if rounded[i] == 1.0]
 	return tags
@@ -45,24 +49,35 @@ def remove_encoding(inv_map, prediction):
 
 def details(args, keras_model, x_test, y_test, loss, accuracy, fbeta, batch_size):
 	log.info('Writing model details...')
+	f = open("model_info.txt", "a")
+	f.write('**** {0} *****'.format(args.model_name))
+	f.write('Epochs: {0}\nBatch Size: {1}\n\n'.format(args.epochs, args.batch_size))
 	with open("model_info.txt", "w") as f:
 		with redirect_stdout(f):
 			keras_model.summary()
+	log.info('Written summary')
 
 	inv_map = {v: k for k, v in util.TAG_MAPPING.items()}
+	labels = list(util.TAG_MAPPING.keys())
 
-	y_pred = keras_model.predict(x_test, batch_size=batch_size)
-	y_pred = list(map(lambda x: remove_encoding(inv_map, x), y_pred))
+	log.info("Making predictions")
+	y_pred = keras_model.predict(x_test, batch_size=batch_size, verbose=1, steps=int(x_test.shape[0] / batch_size))
+	y_pred = y_pred.round().astype(np.int)
 
-	y_test = list(map(lambda x: remove_encoding(inv_map, x), y_test))
-
+	log.info('Writing stats')
 	f = open("model_info.txt", "a")
 	f.write('Loss: %.3f\n' % loss)
 	f.write('Accuracy: %.3f\n' % accuracy)
 	f.write('F2 Score: %.3f\n\n' % fbeta)
 
-	for i in range(len(list(y_pred))):
-		f.write('Actual: {0}.   Expected: {1}\n'.format(y_test[i], y_pred[i]))
+	log.info('Writing report + Confusion matrix')
+	f.write(classification_report(y_test, y_pred, target_names=labels))
+	log.info("Written report")
+	cm = multilabel_confusion_matrix(y_test, y_pred)
+	for i in range(len(labels)):
+		f.write('Confusion Matrix for {0}:\n'.format(labels[i]))
+		f.write(np.array2string(cm[i]))
+		f.write('\n\n')
 
 	f.close()
 	log.info('Done writing details!')
@@ -89,8 +104,6 @@ def train_and_evaluate(args):
 	x_train, y_train, x_test, y_test, x_val, y_val = util.load_data(args.data.lower())
 	log.info('Loaded data')
 
-	# log.info('GPU Stuff:')
-
 	train_samples = x_train.shape[0]
 	input_dimensions = x_train.shape[1:4]
 
@@ -99,23 +112,10 @@ def train_and_evaluate(args):
 
 	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
 
-	# train_data = model.make_inputs(
-	# 	data=x_train,
-	# 	labels=y_train,
-	# 	epochs=args.epochs,
-	# 	batch_size=args.batch_size)
-	#
-	# validation_data = model.make_inputs(
-	# 	data=x_val,
-	# 	labels=y_val,
-	# 	epochs=args.epochs,
-	# 	batch_size=val_samples
-	# )
-
 	image_generator = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1.0 / 255.0)
 
 	train_data = model.make_inputs(x_train, y_train, batch_size=args.batch_size, generator=image_generator)
-	validation_data = model.make_inputs(x_val, y_val, batch_size=val_samples, generator=image_generator)
+	validation_data = model.make_inputs(x_val, y_val, batch_size=args.batch_size, generator=image_generator)
 
 	learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
 		lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
@@ -128,12 +128,15 @@ def train_and_evaluate(args):
 	log.info('Beginning training')
 	train_start = time.time()
 	keras_model.fit(train_data,
+	                steps_per_epoch=int(train_samples / args.batch_size),
 	                epochs=args.epochs,
 	                verbose=1,
 	                validation_data=validation_data,
-	                validation_steps=1,
+	                validation_steps=int(val_samples / args.batch_size),
 	                callbacks=[learning_rate_decay, tensorboard_cb])
 	log.info("Training took: {0} seconds".format(time.time() - train_start))
+
+	del x_train, x_val, y_train, y_val
 
 	for i in range(1, 160):
 		if len(x_test) % i == 0:
@@ -141,7 +144,8 @@ def train_and_evaluate(args):
 	test_batch = div
 
 	log.info("Evaluating model")
-	loss, accuracy, fbeta = keras_model.evaluate(x_test, y_test, batch_size=test_batch, verbose=1)
+	test_inputs = model.make_inputs(x_test, y_test, batch_size=test_batch, generator=image_generator)
+	loss, accuracy, fbeta = keras_model.evaluate(test_inputs, steps=int(test_samples / test_batch), verbose=1)
 	log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
 	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta, test_batch)
 	save_and_upload(args, keras_model)
