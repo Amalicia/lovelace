@@ -6,18 +6,21 @@ import tensorflow as tf
 from contextlib import redirect_stdout
 from sklearn.metrics import classification_report
 from sklearn.metrics import multilabel_confusion_matrix
-from functools import partial
 
 import time
 import os
 import argparse
 import logging
-import multiprocessing
 import numpy as np
+import gc
 
 from . import util
 from . import model
 from . import upload_file
+
+sess = tf.Session()
+graph = tf.get_default_graph()
+tf.keras.backend.set_session(sess)
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -25,6 +28,7 @@ log.setLevel(logging.INFO)
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 log.addHandler(console)
+
 
 
 def args():
@@ -91,13 +95,8 @@ def save_and_upload(args, keras_model):
 	cloud_model = 'models/{0}/{1}.h5'.format(args.data.lower(), args.model_name)
 	upload_file.upload_file('lovelace-data', 'model.h5', cloud_model)
 
-
-# print('Saving model as TF SavedModel')
-# export_path = os.path.join(args.job_dir, args.model_name)
-# tf.keras.models.save_model(keras_model, export_path)
-# print('Saved model as tf')
-# # tf_model = 'models/{0}/{1}.tf'.format(args.data.lower(), args.model_name)
-# # upload_file.upload_file('lovelace-data', 'model.tf', tf_model)
+	save_loc = '%s/%s' % (args.job_dir, args.model_name)
+	tf.saved_model.save(keras_model, save_loc)
 
 
 def train_and_evaluate(args):
@@ -110,12 +109,15 @@ def train_and_evaluate(args):
 	test_samples = x_test.shape[0]
 	val_samples = x_val.shape[0]
 
-	keras_model = model.create_model(input_dimensions=input_dimensions, learning_rate=args.lr)
+	keras_model = model.create_densenet_model(input_dimensions=input_dimensions, learning_rate=args.lr)
 
 	image_generator = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1.0 / 255.0)
 
 	train_data = model.make_inputs(x_train, y_train, batch_size=args.batch_size, generator=image_generator)
 	validation_data = model.make_inputs(x_val, y_val, batch_size=args.batch_size, generator=image_generator)
+
+	del x_train, y_train, x_val, y_val
+	gc.collect()
 
 	learning_rate_decay = tf.keras.callbacks.LearningRateScheduler(
 		lambda epoch: args.lr + 0.02 * (0.5 ** (1 + epoch))
@@ -127,16 +129,19 @@ def train_and_evaluate(args):
 
 	log.info('Beginning training')
 	train_start = time.time()
-	keras_model.fit(train_data,
-	                steps_per_epoch=int(train_samples / args.batch_size),
-	                epochs=args.epochs,
-	                verbose=1,
-	                validation_data=validation_data,
-	                validation_steps=int(val_samples / args.batch_size),
-	                callbacks=[learning_rate_decay, tensorboard_cb])
+	with graph.as_default():
+		tf.keras.backend.set_session(sess)
+		keras_model.fit(train_data,
+		                steps_per_epoch=int(train_samples / args.batch_size),
+		                epochs=args.epochs,
+		                verbose=1,
+		                validation_data=validation_data,
+		                validation_steps=int(val_samples / args.batch_size),
+		                callbacks=[learning_rate_decay, tensorboard_cb])
 	log.info("Training took: {0} seconds".format(time.time() - train_start))
 
-	del x_train, x_val, y_train, y_val
+	del train_data, validation_data
+	gc.collect()
 
 	for i in range(1, 160):
 		if len(x_test) % i == 0:
@@ -145,7 +150,10 @@ def train_and_evaluate(args):
 
 	log.info("Evaluating model")
 	test_inputs = model.make_inputs(x_test, y_test, batch_size=test_batch, generator=image_generator)
+	log.info('Done making test inputs')
 	loss, accuracy, fbeta = keras_model.evaluate(test_inputs, steps=int(test_samples / test_batch), verbose=1)
+	del test_inputs
+	gc.collect()
 	log.info('>>> loss=%.3f, accuracy=%.3f, f2=%.3f' % (loss, accuracy, fbeta))
 	details(args, keras_model, x_test, y_test, loss, accuracy, fbeta, test_batch)
 	save_and_upload(args, keras_model)

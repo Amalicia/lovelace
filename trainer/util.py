@@ -16,6 +16,7 @@ import urllib.request
 import requests
 import time
 import logging
+import gc
 
 from . import upload_file
 
@@ -84,20 +85,6 @@ def append_png(image):
 	return image + '.png'
 
 
-# def create_encoder_mapping(data):
-# 	labels = set()
-# 	for i in range(len(data)):
-# 		labels.update(data['Tags'][i].split(' '))
-#
-# 	labels = list(labels)
-# 	labels.sort()
-#
-# 	labels_dict = {labels[i]: i for i in range(len(labels))}
-# 	inv_map = {v: k for k, v in labels_dict.items()}
-# 	print(labels_dict)
-# 	return labels_dict, inv_map
-
-
 def encode(tags):
 	encoding = np.zeros(len(TAG_MAPPING), dtype='uint8')
 	tags_list = tags.split(' ')
@@ -163,7 +150,7 @@ def __load_data(data_arg):
 	np.savez_compressed('full_data.npz', image_arr, labels)
 	log.info('Uploading to cloud')
 	os.system("gsutil cp full_data.npz gs://lovelace-data/all/")
-	# upload_file.upload_file('lovelace-data', 'full_data.npz', data_arg)
+	upload_file.upload_file('lovelace-data', 'full_data.npz', data_arg)
 	return image_arr, labels
 
 
@@ -187,8 +174,12 @@ def load_data(data_arg):
 		image, label = __load_data(data_arg)
 
 	log.info("Data shapes: {0}, {1}".format(image.shape, label.shape))
+	image = np.repeat(image[..., np.newaxis], 3, -1)
+	image = image[:, :, :, 0, :]
+	log.info(image.shape)
 
 	x_train, x_test, y_train, y_test = train_test_split(image, label, random_state=42, test_size=0.3)
 	del image, label
+	gc.collect()
 	x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, random_state=42, test_size=0.2)
 	return x_train, y_train, x_test, y_test, x_val, y_val
